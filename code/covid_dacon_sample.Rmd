@@ -1,0 +1,124 @@
+---
+title: "covid_dacon"
+author: "kmson"
+date: '2020 4 11 '
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(ggmap)
+library(dtplyr)
+library(lubridate)
+
+pdf.options(family = "Korea1deb")
+API_key <- 'AIzaSyCvFJzO8nrvmospv--Mhi9XypO7PvBcZcw'
+register_google(key = API_key)
+```
+
+```{r}
+Case <- read_csv('../data/coronavirusdataset_20200407/Case.csv')
+unique_check <- function(x){unique(x)}
+Case %>% sapply(unique_check)
+
+Case %>% 
+  group_by(city) %>%
+  summarise(count = n()) %>% 
+  arrange(-count) %>% 
+  ggplot(aes(x=reorder(city, -count), y=count)) + 
+  geom_col() + theme_bw() + 
+  coord_flip() + 
+  theme(axis.text.x = element_text(angle=90, face = 'bold')) +
+  xlab('city') 
+```
+
+
+```{r}
+# we want to convert '-' to 'NA' in all case 
+convert_pipe_na <- function(x){ifelse(x == '-', NA, x)}
+
+# Case %>% glimpse
+# Case %>%  mutate_all(convert_pipe_na)
+# Case %>%  mutate_if(is.character, convert_pipe_na)
+# 
+
+Case %>% select(longitude, latitude) %>% 
+  mutate_all(convert_pipe_na) %>% 
+  summarise(mean1 = mean(longitude, na.rm=T),
+            mean = mean(latitude, na.rm=T))
+
+map_korea <- ggmap(get_map(c(127.9261, 36.41248), zoom = 7, color='bw'))
+
+Case %>% 
+  mutate_all(convert_pipe_na) %>% 
+  ggplot(aes(x=longitude, y=latitude, size = confirmed)) + geom_point()
+Case %>% 
+  mutate_all(convert_pipe_na)
+
+map_korea +
+  geom_point(data = Case %>% 
+               mutate_all(convert_pipe_na) %>% 
+               mutate(infection_case = as.factor(infection_case)), 
+             aes(x=longitude %>% as.numeric(), y=latitude %>% as.numeric(),
+                 size = confirmed, 
+                 col=ifelse(Case$confirmed > 100, Case$infection_case, NA))) + theme(legend.position = 'bottom')
+                 
+```
+
+
+```{r}
+Time <- read_csv('../data/coronavirusdataset_20200407/Time.csv')
+Time %>% head()
+```
+
+```{r}
+# build data structure with gather
+# for visualizing multi factor 
+options(scipen = 100000)
+
+Time %>% 
+  mutate(date_time = str_c(date, " ", time) %>% ymd_h()) %>% 
+  select(-date, -time) %>% 
+  gather(key = 'type', value = 'value', -date_time) %>% 
+  ggplot(aes(x=date_time, y=value, col=type)) + geom_line()
+```
+```{r}
+Time %>% 
+  mutate(date_time = str_c(date, " ", time) %>% ymd_h()) %>% 
+  select(-date, -time) %>% 
+  gather(key = 'type', value = 'value', -date_time) %>% 
+  ggplot(aes(x=date_time, y=value)) + geom_line() +
+  facet_wrap(~type, scales = 'free_y')
+```
+
+```{r}
+Time %>% 
+  mutate(date_time = str_c(date, " ", time) %>% ymd_h()) %>% 
+  select(-date, -time) %>% 
+  mutate(test_diff = test - lag(test, n=1), 
+         negative_diff = negative - lag(negative, n=1),
+         confirmed_diff = confirmed - lag(confirmed, n=1),
+         released_diff = released - lag(released, n=1),
+         deceased_diff = deceased - lag(deceased, n=1)) %>% 
+  select(date_time, ends_with('diff')) %>% 
+  gather(key = 'type', value = 'value', -date_time) %>% 
+  filter(!is.na(value)) %>% 
+  ggplot(aes(x=date_time, y=value)) + geom_line() +
+  facet_wrap(~type, scales = 'free_y')
+  #contains('diff') starts_with(),
+```
+
+
+## dtplyr 알아가기 
+```{r}
+data_frame_temp <- data.frame(a = runif(1000000), b = rbernoulli(1000000),
+                              c = runif(1000000) + 1, 
+                              d = runif(min = 10, max=15, n=1000000) * rbernoulli(1000000))
+system.time({data_frame_temp %>% group_by(b) %>% summarise(mean_a = mean(a))%>% arrange(mean_a)})
+
+data_frame_temp_DT <- dtplyr::lazy_dt(data_frame_temp)
+system.time({data_frame_temp_DT %>% group_by(b) %>% summarise(mean_a = mean(a)) %>% arrange(mean_a)})
+```
+
+
+
